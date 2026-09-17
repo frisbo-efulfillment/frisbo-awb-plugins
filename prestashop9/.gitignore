@@ -1,0 +1,6 @@
+.env
+.cache/
+shop/
+.idea/
+.vscode/
+.DS_Store

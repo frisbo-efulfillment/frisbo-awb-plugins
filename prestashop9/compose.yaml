@@ -1,0 +1,50 @@
+services:
+  shop:
+    build:
+      context: ./docker/php85
+      args:
+        INSTALL_XDEBUG: ${INSTALL_XDEBUG:-0}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8090}:80"
+    volumes:
+      - ./shop:/var/www/html
+      - ./modules:/workspace/modules
+      - ./docker/php85/php-dev.ini:/usr/local/etc/php/conf.d/99-prestashop-dev.ini:ro
+    environment:
+      PS_DOMAIN: ${PS_DOMAIN:-localhost:8090}
+      PS_ADMIN_DIR: ${PS_ADMIN_DIR:-admin-dev}
+      DB_SERVER: db
+      DB_PORT: 3306
+      DB_NAME: prestashop
+      DB_USER: prestashop
+      DB_PASSWORD: prestashop
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Dev123456!}
+    restart: unless-stopped
+
+  db:
+    image: mariadb:10.11
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --sql-mode=NO_ENGINE_SUBSTITUTION
+    environment:
+      MARIADB_DATABASE: prestashop
+      MARIADB_USER: prestashop
+      MARIADB_PASSWORD: prestashop
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  db-data:

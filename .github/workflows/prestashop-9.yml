@@ -1,0 +1,137 @@
+name: prestashop-9
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - prestashop9/modules/frisbo_awb/**
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prestashop-9-release
+  cancel-in-progress: false
+
+jobs:
+  php-compatibility:
+    name: PHP ${{ matrix.php }} syntax
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+          - "8.5"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Check module PHP syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE/prestashop9/modules/frisbo_awb:/module:ro" \
+            "php:${{ matrix.php }}-cli" \
+            sh -ec 'find /module -type f -name "*.php" -exec php -l {} \;'
+
+  prestashop-compatibility:
+    name: PrestaShop ${{ matrix.prestashop }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        prestashop:
+          - "9.1.5"
+          - "9.1.4"
+          - "9.1.3"
+          - "9.1.2"
+          - "9.1.1"
+          - "9.1.0"
+          - "9.0.3"
+          - "9.0.2"
+          - "9.0.1"
+          - "9.0.0"
+        php:
+          - "8.1"
+          - "8.2"
+          - "8.3"
+          - "8.4"
+          - "8.5"
+        exclude:
+          - prestashop: "9.0.3"
+            php: "8.5"
+          - prestashop: "9.0.2"
+            php: "8.5"
+          - prestashop: "9.0.1"
+            php: "8.5"
+          - prestashop: "9.0.0"
+            php: "8.5"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install module on PrestaShop
+        shell: bash
+        env:
+          PRESTASHOP_VERSION: ${{ matrix.prestashop }}
+          PHP_VERSION: ${{ matrix.php }}
+        run: |
+          set -euo pipefail
+          ./prestashop9/scripts/test-module-version.sh "$PRESTASHOP_VERSION" "$PHP_VERSION"
+
+  release:
+    name: Package and release frisbo_awb for PrestaShop 9
+    runs-on: ubuntu-latest
+    needs:
+      - php-compatibility
+      - prestashop-compatibility
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Create PrestaShop module ZIP
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="v$(date -u +'%Y-%m-%d_%H%M%S')"
+          archive_name="frisbo_awb-prestashop9-${release_tag}.zip"
+
+          mkdir -p build dist
+          cp -a prestashop9/modules/frisbo_awb build/frisbo_awb
+          find build/frisbo_awb -type f \( -name '.DS_Store' -o -name '*.swp' \) -delete
+
+          test -f build/frisbo_awb/frisbo_awb.php
+          (cd build && zip -q -r "../dist/${archive_name}" frisbo_awb)
+          sha256sum "dist/${archive_name}" > "dist/${archive_name}.sha256"
+
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "archive_name=${archive_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.package.outputs.release_tag }}
+          ARCHIVE_NAME: ${{ steps.package.outputs.archive_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh release create "$RELEASE_TAG" \
+            "dist/$ARCHIVE_NAME" \
+            "dist/$ARCHIVE_NAME.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "PrestaShop 9 - $RELEASE_TAG" \
+            --notes "Tested with PrestaShop 9.1.0-9.1.5 on PHP 8.1, 8.2, 8.3, 8.4, and 8.5, and PrestaShop 9.0.0-9.0.3 on PHP 8.1, 8.2, 8.3, and 8.4." \
+            --generate-notes
