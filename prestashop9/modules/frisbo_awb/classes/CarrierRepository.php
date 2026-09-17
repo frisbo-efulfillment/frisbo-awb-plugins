@@ -28,7 +28,6 @@ class CarrierRepository
             'backend_carrier_id' => pSQL($courier['id']),
             'backend_name' => pSQL($courier['name']),
             'friendly_name' => pSQL($courier['name']),
-            'shipping_price' => 0,
             'id_carrier' => null,
             'id_reference' => null,
             'enabled' => 1,
@@ -86,13 +85,12 @@ class CarrierRepository
         );
     }
 
-    public function updateConfiguration($id, $friendlyName, $shippingPrice, $enabled)
+    public function updateConfiguration($id, $friendlyName, $enabled)
     {
         return Db::getInstance()->update(
             'frisbo_awb_carrier',
             array(
                 'friendly_name' => pSQL($friendlyName),
-                'shipping_price' => (float) $shippingPrice,
                 'enabled' => (int) (bool) $enabled,
                 'date_upd' => date('Y-m-d H:i:s'),
             ),

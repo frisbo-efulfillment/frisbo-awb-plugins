@@ -31,9 +31,9 @@ The HTTP client follows the Frisbo AWB OpenAPI document served at
 
 The internal identity `(platform, external ID)` is serialized as
 `platform:externalId` in the documented `external_reference` field. The saved
-customer-facing courier name and locally configured shipping price are placed
-in the documented `shipment_notes` field. The Frisbo courier identity is sent
-as `courier_id`. Shipment creation omits `uid`; the stable
+customer-facing courier name is placed in the documented `shipment_notes`
+field. The Frisbo courier identity is sent as `courier_id`. Shipment creation
+omits `uid`; the stable
 `external_reference = prestashop:<order ID>` is used for idempotency and label
 lookup.
 
@@ -42,6 +42,8 @@ Only fields accepted by the current Frisbo `CreateShipment` schema are sent.
 
 ## Configuration
 
-Configure Client ID, Token, friendly carrier names, fixed prices, and enabled
-state from the module Configure page. A blank Token submission preserves the
-stored value. The stored token is never rendered back to the browser.
+Configure Client ID, Token, friendly carrier names, and enabled state from the
+module Configure page. Shipping zones, ranges, and prices are configured on
+the native PrestaShop carrier page linked from each courier row. A blank Token
+submission preserves the stored value. The stored token is never rendered
+back to the browser.
