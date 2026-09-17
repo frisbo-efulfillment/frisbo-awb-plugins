@@ -18,7 +18,8 @@ The PHP 7.4 edge additionally builds mbstring against Debian's Oniguruma
 development package, as required by that PHP generation.
 For PrestaShop 1.7.4.x on PHP 7.4, the test harness suppresses legacy-core
 warning/deprecation categories only while running Symfony console commands;
-it does not patch core or relax the module's PHP syntax checks.
+those commands also boot the legacy core in its non-debug console environment.
+This does not patch core or relax the module's PHP syntax checks.
 
 ## API mapping
 
