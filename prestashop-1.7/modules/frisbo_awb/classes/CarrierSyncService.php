@@ -67,7 +67,7 @@ class CarrierSyncService
             $carrier->active = (bool) $configuredCourier['enabled'];
             $carrier->is_module = true;
             $carrier->external_module_name = 'frisbo_awb';
-            $carrier->shipping_external = true;
+            $carrier->shipping_external = false;
             $carrier->need_range = true;
             if (!$carrier->update()) {
                 throw new PrestaShopException('Could not update the PrestaShop carrier.');
@@ -89,7 +89,7 @@ class CarrierSyncService
         $carrier->deleted = false;
         $carrier->is_module = true;
         $carrier->external_module_name = 'frisbo_awb';
-        $carrier->shipping_external = true;
+        $carrier->shipping_external = false;
         $carrier->need_range = true;
         $carrier->shipping_method = Carrier::SHIPPING_METHOD_PRICE;
         $carrier->range_behavior = false;

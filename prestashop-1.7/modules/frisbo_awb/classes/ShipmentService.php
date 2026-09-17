@@ -112,7 +112,6 @@ class ShipmentService
             'courier' => array(
                 'id' => $savedOrder['backend_carrier_id'],
                 'name' => $savedOrder['courier_name'],
-                'shipping_price' => (float) $savedOrder['shipping_price'],
             ),
             'cod' => array(
                 'enabled' => (bool) $savedOrder['is_cod'],
