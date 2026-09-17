@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths:
-      - prestashop1743-dev/modules/frisbo_awb/**
+      - prestashop-1.7/modules/frisbo_awb/**
 
 permissions:
   contents: write
@@ -33,7 +33,7 @@ jobs:
           archive_name="frisbo_awb-${release_tag}.zip"
 
           mkdir -p build dist
-          cp -a prestashop1743-dev/modules/frisbo_awb build/frisbo_awb
+          cp -a prestashop-1.7/modules/frisbo_awb build/frisbo_awb
           find build/frisbo_awb -type f \( -name '.DS_Store' -o -name '*.swp' \) -delete
 
           test -f build/frisbo_awb/frisbo_awb.php
@@ -56,5 +56,6 @@ jobs:
             "dist/$ARCHIVE_NAME" \
             "dist/$ARCHIVE_NAME.sha256" \
             --target "$GITHUB_SHA" \
-            --title "PrestaShop 1.7.4.3 - $RELEASE_TAG" \
+            --title "PrestaShop 1.7 - $RELEASE_TAG" \
+            --notes "Compatibility: PrestaShop 1.7.4.3 through 1.7.8.11." \
             --generate-notes

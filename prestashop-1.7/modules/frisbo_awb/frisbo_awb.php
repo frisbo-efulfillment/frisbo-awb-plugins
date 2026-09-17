@@ -33,7 +33,7 @@ class Frisbo_Awb extends CarrierModule
         $this->need_instance = 0;
         $this->bootstrap = true;
         $this->controllers = array('AdminFrisboAwb');
-        $this->ps_versions_compliancy = array('min' => '1.7.4.3', 'max' => '1.7.4.3');
+        $this->ps_versions_compliancy = array('min' => '1.7.4.3', 'max' => '1.7.8.11');
 
         parent::__construct();
 

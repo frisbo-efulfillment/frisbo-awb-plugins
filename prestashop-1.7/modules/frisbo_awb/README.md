@@ -1,6 +1,9 @@
 # frisbo-awb
 
-Legacy carrier module for PrestaShop 1.7.4.3 on PHP 7.2.
+Legacy carrier module compatible with PrestaShop 1.7.4.3 through 1.7.8.11.
+
+The included local development environment intentionally remains pinned to
+PrestaShop 1.7.4.3 and PHP 7.2 for legacy compatibility testing.
 
 ## API mapping
 
