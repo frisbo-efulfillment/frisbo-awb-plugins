@@ -7,14 +7,16 @@ The included local development environment defaults to PrestaShop 8.2.8 and
 PHP 8.1. Set `PRESTASHOP_VERSION` and the matching official release archive URL
 to reproduce another supported PrestaShop 8 release.
 
-The automated installation matrix covers these exact PrestaShop releases:
+Routine CI installs the module on these PrestaShop/PHP edges:
 
-- 8.2.0 through 8.2.8;
-- 8.1.0 through 8.1.7;
-- 8.0.1, 8.0.2, and 8.0.4.
+- oldest supported patch 8.0.1 on PHP 7.2 and PHP 8.1;
+- newest patches 8.2.7 and 8.2.8 on PHP 7.2 and PHP 8.1.
 
 Module PHP syntax is checked independently on PHP 7.2, 7.3, 7.4, 8.0, and
-8.1. PrestaShop 8 itself requires PHP 7.2.5 or newer.
+8.1. PrestaShop 8 itself requires PHP 7.2.5 or newer. To cull or add a
+variant, edit `matrix.include` in `.github/workflows/prestashop-8.yml`. Any
+supported pairing can be run with
+`./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
 
 ## API mapping
 
