@@ -8,11 +8,15 @@ to reproduce another supported PrestaShop 9 release.
 
 The automated installation matrix covers these exact PrestaShop releases:
 
-- 9.1.0 through 9.1.5 on PHP 8.1, 8.2, 8.3, 8.4, and 8.5;
-- 9.0.0 through 9.0.3 on PHP 8.1, 8.2, 8.3, and 8.4.
+- 9.1.0 through 9.1.5 on the recommended PHP 8.5 runtime;
+- 9.0.0 through 9.0.3 on the recommended PHP 8.4 runtime;
+- the complete PHP 8.1-8.5 range on 9.1.5;
+- the complete PHP 8.1-8.4 range on 9.0.3.
 
-Every listed PrestaShop/PHP pairing is installed and checked in CI. PHP syntax
-is also checked independently on PHP 8.1 through PHP 8.5.
+PHP syntax is also checked independently on PHP 8.1 through PHP 8.5. To cull
+or add an installation variant, edit the explicit `matrix.include` list in
+`.github/workflows/prestashop-9.yml`. Any supported pairing can be tested
+locally with `./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
 
 ## API mapping
 
