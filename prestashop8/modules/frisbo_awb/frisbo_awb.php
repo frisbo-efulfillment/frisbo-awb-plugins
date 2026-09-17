@@ -28,7 +28,7 @@ class Frisbo_Awb extends CarrierModule
     {
         $this->name = 'frisbo_awb';
         $this->tab = 'shipping_logistics';
-        $this->version = '2.0.0';
+        $this->version = '2.1.0';
         $this->author = 'Frisbo';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -99,12 +99,12 @@ class Frisbo_Awb extends CarrierModule
             return false;
         }
 
-        return (float) $configuredCourier['shipping_price'];
+        return (float) $shippingCost;
     }
 
     public function getOrderShippingCostExternal($cart)
     {
-        return $this->getOrderShippingCost($cart, 0);
+        return false;
     }
 
     public function hookActionCarrierUpdate($params)
@@ -142,7 +142,7 @@ class Frisbo_Awb extends CarrierModule
             'id_order' => (int) $order->id,
             'backend_carrier_id' => $configuredCourier['backend_carrier_id'],
             'courier_name' => $configuredCourier['friendly_name'],
-            'shipping_price' => (float) $configuredCourier['shipping_price'],
+            'shipping_price' => (float) $order->total_shipping_tax_incl,
             'is_cod' => $isCod,
             'cod_amount' => $isCod ? $codDetector->getAmount($order) : null,
             'currency_iso' => Validate::isLoadedObject($currency) ? $currency->iso_code : '',
@@ -247,21 +247,16 @@ class Frisbo_Awb extends CarrierModule
         foreach ($repository->all() as $courier) {
             $id = (int) $courier['id_frisbo_awb_carrier'];
             $friendlyName = trim((string) Tools::getValue('friendly_name_'.$id));
-            $priceValue = str_replace(',', '.', trim((string) Tools::getValue('shipping_price_'.$id)));
             $enabled = (bool) Tools::getValue('enabled_'.$id);
 
             if ($friendlyName === '' || Tools::strlen($friendlyName) > 64 || !Validate::isCarrierName($friendlyName)) {
                 throw new PrestaShopException(sprintf($this->l('Invalid friendly name for courier %s.'), $courier['backend_carrier_id']));
             }
-            if (!Validate::isPrice($priceValue) || (float) $priceValue < 0) {
-                throw new PrestaShopException(sprintf($this->l('Invalid shipping price for courier %s.'), $courier['backend_carrier_id']));
-            }
-
-            $validated[] = array($id, $friendlyName, (float) $priceValue, $enabled);
+            $validated[] = array($id, $friendlyName, $enabled);
         }
 
         foreach ($validated as $values) {
-            $repository->updateConfiguration($values[0], $values[1], $values[2], $values[3]);
+            $repository->updateConfiguration($values[0], $values[1], $values[2]);
         }
     }
 
@@ -294,7 +289,7 @@ class Frisbo_Awb extends CarrierModule
 
         $html .= '<div class="panel"><h3><i class="icon-truck"></i> '.$this->l('Courier configuration').'</h3>';
         $html .= '<form method="post" action=""><div class="table-responsive"><table class="table">';
-        $html .= '<thead><tr><th>'.$this->l('Frisbo courier').'</th><th>'.$this->l('Friendly checkout name').'</th><th>'.$this->l('Shipping price').'</th><th>'.$this->l('Enabled').'</th></tr></thead><tbody>';
+        $html .= '<thead><tr><th>'.$this->l('Frisbo courier').'</th><th>'.$this->l('Friendly checkout name').'</th><th>'.$this->l('PrestaShop carrier').'</th><th>'.$this->l('Enabled').'</th></tr></thead><tbody>';
         if (!$couriers) {
             $html .= '<tr><td colspan="4">'.$this->l('No couriers have been refreshed from Frisbo yet.').'</td></tr>';
         } else {
@@ -306,7 +301,17 @@ class Frisbo_Awb extends CarrierModule
                 }
                 $html .= '<tr><td><code>'.$this->escape($backendLabel).'</code></td>';
                 $html .= '<td><input class="form-control" type="text" maxlength="64" name="friendly_name_'.$id.'" value="'.$this->escape($courier['friendly_name']).'" required></td>';
-                $html .= '<td><input class="form-control" type="number" min="0" step="0.000001" name="shipping_price_'.$id.'" value="'.$this->escape($courier['shipping_price']).'" required></td>';
+                if (!empty($courier['id_carrier'])) {
+                    $carrierUrl = $this->context->link->getAdminLink(
+                        'AdminCarrierWizard',
+                        true,
+                        array(),
+                        array('id_carrier' => (int) $courier['id_carrier'])
+                    );
+                    $html .= '<td><a class="btn btn-default" href="'.$this->escape($carrierUrl).'"><i class="icon-cog"></i> '.$this->l('Configure carrier').'</a></td>';
+                } else {
+                    $html .= '<td>'.$this->l('Save to create the PrestaShop carrier.').'</td>';
+                }
                 $html .= '<td><input type="checkbox" name="enabled_'.$id.'" value="1"'.($courier['enabled'] ? ' checked' : '').'></td></tr>';
             }
         }
@@ -355,7 +360,6 @@ class Frisbo_Awb extends CarrierModule
                 `backend_carrier_id` VARCHAR(191) NOT NULL,
                 `backend_name` VARCHAR(255) NULL,
                 `friendly_name` VARCHAR(255) NOT NULL,
-                `shipping_price` DECIMAL(20,6) NOT NULL,
                 `id_carrier` INT UNSIGNED NULL,
                 `id_reference` INT UNSIGNED NULL,
                 `enabled` TINYINT(1) NOT NULL DEFAULT 1,

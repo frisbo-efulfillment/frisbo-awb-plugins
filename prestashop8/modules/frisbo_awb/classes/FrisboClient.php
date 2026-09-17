@@ -178,7 +178,6 @@ class FrisboClient
         $notes = array(
             'PrestaShop order: '.(string) $shipment['external']['id'],
             'Courier name: '.(string) $shipment['courier']['name'],
-            'Configured shipping price: '.number_format((float) $shipment['courier']['shipping_price'], 2, '.', '').' '.(string) $shipment['cod']['currency'],
         );
 
         if (!empty($shipment['notes'])) {

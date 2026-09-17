@@ -105,6 +105,54 @@ if (!Module::isInstalled("frisbo_awb")) {
     fwrite(STDERR, "frisbo_awb is not installed.".PHP_EOL);
     exit(1);
 }
+$module = Module::getInstanceByName("frisbo_awb");
+$idShop = (int) Context::getContext()->shop->id;
+$idLang = (int) Context::getContext()->language->id;
+$carrierRepository = new CarrierRepository($idShop);
+$carrierRepository->upsertDiscovered(array("id" => "CI_NATIVE_RATE", "name" => "CI Native Rate"));
+$carrierSync = new CarrierSyncService($carrierRepository, $idLang, $idShop);
+$carrierSync->synchronizeAll();
+$configuredCarrier = $carrierRepository->findByBackendId("CI_NATIVE_RATE");
+$nativeCarrier = new Carrier((int) $configuredCarrier["id_carrier"]);
+if (!Validate::isLoadedObject($nativeCarrier) || (bool) $nativeCarrier->shipping_external) {
+    fwrite(STDERR, "The managed carrier is not using native PrestaShop pricing.".PHP_EOL);
+    exit(1);
+}
+$cart = new Cart();
+$cart->id_shop = $idShop;
+$module->id_carrier = (int) $nativeCarrier->id;
+if ((float) $module->getOrderShippingCost($cart, 12.34) !== 12.34) {
+    fwrite(STDERR, "The module did not preserve PrestaShop computed shipping.".PHP_EOL);
+    exit(1);
+}
+$configurationHtml = $module->getContent();
+if (strpos($configurationHtml, "Configure carrier") === false || strpos($configurationHtml, "shipping_price_") !== false) {
+    fwrite(STDERR, "The native carrier configuration link is missing or a module price input remains.".PHP_EOL);
+    exit(1);
+}
+$carrierPriceColumn = (int) Db::getInstance()->getValue(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = \""._DB_PREFIX_."frisbo_awb_carrier\"
+       AND COLUMN_NAME = \"shipping_price\""
+);
+if ($carrierPriceColumn !== 0) {
+    fwrite(STDERR, "The courier configuration table still owns a shipping price.".PHP_EOL);
+    exit(1);
+}
+Db::getInstance()->update("carrier", array("shipping_external" => 1), "id_carrier = ".(int) $nativeCarrier->id);
+require_once "/var/www/html/modules/frisbo_awb/upgrade/upgrade-2.1.0.php";
+if (!upgrade_module_2_1_0($module)) {
+    fwrite(STDERR, "The native-pricing upgrade failed.".PHP_EOL);
+    exit(1);
+}
+$upgradedShippingExternal = (int) Db::getInstance()->getValue(
+    "SELECT shipping_external FROM "._DB_PREFIX_."carrier WHERE id_carrier = ".(int) $nativeCarrier->id
+);
+if ($upgradedShippingExternal !== 0) {
+    fwrite(STDERR, "The upgrade did not migrate the carrier to native pricing.".PHP_EOL);
+    exit(1);
+}
 $hook = (int) Db::getInstance()->getValue(
     "SELECT COUNT(*) FROM "._DB_PREFIX_."hook h
      INNER JOIN "._DB_PREFIX_."hook_module hm ON hm.id_hook = h.id_hook
