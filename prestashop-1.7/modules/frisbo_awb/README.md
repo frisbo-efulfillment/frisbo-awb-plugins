@@ -6,6 +6,13 @@ PHP 7.2 through PHP 7.4.
 The included local development environment intentionally remains pinned to
 PrestaShop 1.7.4.3 and PHP 7.2 for legacy compatibility testing.
 
+Routine CI installs the module on the oldest supported patch (1.7.4.3) and
+the two newest patches (1.7.8.10 and 1.7.8.11), each on PHP 7.2 and PHP 7.4.
+PHP syntax is also checked independently on both runtimes. To cull or add a
+variant, edit `matrix.include` in `.github/workflows/prestashop-1743.yml`.
+Any curated pairing can be reproduced with
+`./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
+
 ## API mapping
 
 The HTTP client follows the Frisbo AWB OpenAPI document served at
