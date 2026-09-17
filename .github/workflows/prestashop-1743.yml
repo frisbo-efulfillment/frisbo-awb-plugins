@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  compatibility:
-    name: PHP ${{ matrix.php }} compatibility
+  php-compatibility:
+    name: PHP ${{ matrix.php }} syntax
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -38,11 +38,41 @@ jobs:
             "php:${{ matrix.php }}-cli" \
             sh -ec 'find /module -type f -name "*.php" -exec php -l {} \;'
 
+  prestashop-compatibility:
+    name: PrestaShop ${{ matrix.prestashop }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        # Oldest supported patch plus the two newest, each on PHP edges.
+        include:
+          - { prestashop: "1.7.4.3", php: "7.2" }
+          - { prestashop: "1.7.4.3", php: "7.4" }
+          - { prestashop: "1.7.8.10", php: "7.2" }
+          - { prestashop: "1.7.8.10", php: "7.4" }
+          - { prestashop: "1.7.8.11", php: "7.2" }
+          - { prestashop: "1.7.8.11", php: "7.4" }
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install module on PrestaShop
+        shell: bash
+        env:
+          PRESTASHOP_VERSION: ${{ matrix.prestashop }}
+          PHP_VERSION: ${{ matrix.php }}
+        run: |
+          set -euo pipefail
+          ./prestashop-1.7/scripts/test-module-version.sh "$PRESTASHOP_VERSION" "$PHP_VERSION"
+
   release:
     name: Package and release frisbo_awb
     runs-on: ubuntu-latest
     needs:
-      - compatibility
+      - php-compatibility
+      - prestashop-compatibility
 
     steps:
       - name: Check out repository
@@ -82,5 +112,5 @@ jobs:
             "dist/$ARCHIVE_NAME.sha256" \
             --target "$GITHUB_SHA" \
             --title "PrestaShop 1.7 - $RELEASE_TAG" \
-            --notes "Compatibility: PrestaShop 1.7.4.3 through 1.7.8.11; PHP 7.2 through PHP 7.4." \
+            --notes "Compatible with PrestaShop 1.7.4.3-1.7.8.11 and PHP 7.2-7.4. CI tests the oldest supported patch and two newest patches on the oldest and newest PHP runtimes." \
             --generate-notes

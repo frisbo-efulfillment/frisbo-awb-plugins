@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 PRESTASHOP_VERSION" >&2
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 PRESTASHOP_VERSION PHP_VERSION" >&2
     exit 2
 fi
 
 prestashop_version=$1
+php_version=$2
 case "$prestashop_version" in
     8.2.8|8.2.7|8.2.6|8.2.5|8.2.4|8.2.3|8.2.2|8.2.1|8.2.0|\
     8.1.7|8.1.6|8.1.5|8.1.4|8.1.3|8.1.2|8.1.1|8.1.0|\
@@ -16,9 +17,16 @@ case "$prestashop_version" in
         exit 2
         ;;
 esac
+case "$php_version" in
+    7.2|8.1) ;;
+    *)
+        echo "ERROR: unsupported PHP version for the curated matrix: $php_version" >&2
+        exit 2
+        ;;
+esac
 
 root_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-test_suffix=${prestashop_version//./-}-$$
+test_suffix=${prestashop_version//./-}-${php_version//./-}-$$
 network_name=frisbo-awb-test-$test_suffix
 db_container=frisbo-awb-db-$test_suffix
 shop_container=frisbo-awb-shop-$test_suffix
@@ -63,7 +71,7 @@ docker run --detach \
     --env ADMIN_MAIL=admin@example.test \
     --env ADMIN_PASSWD='Dev123456!' \
     --volume "$root_dir/modules:/workspace/modules:ro" \
-    "prestashop/prestashop:${prestashop_version}-8.1-apache" >/dev/null
+    "prestashop/prestashop:${prestashop_version}-${php_version}-apache" >/dev/null
 
 for attempt in $(seq 1 120); do
     if docker exec "$shop_container" test -f /var/www/html/app/config/parameters.php && \
@@ -83,10 +91,14 @@ done
 
 docker exec "$shop_container" ln -s /workspace/modules/frisbo_awb /var/www/html/modules/frisbo_awb
 docker exec "$shop_container" php bin/console prestashop:module install frisbo_awb --no-interaction
-docker exec --env EXPECTED_PS_VERSION="$prestashop_version" "$shop_container" php -r '
+docker exec --env EXPECTED_PS_VERSION="$prestashop_version" --env EXPECTED_PHP_VERSION="$php_version" "$shop_container" php -r '
 require "/var/www/html/config/config.inc.php";
 if (_PS_VERSION_ !== getenv("EXPECTED_PS_VERSION")) {
     fwrite(STDERR, "Unexpected PrestaShop version: "._PS_VERSION_.PHP_EOL);
+    exit(1);
+}
+if (strpos(PHP_VERSION, getenv("EXPECTED_PHP_VERSION").".") !== 0) {
+    fwrite(STDERR, "Unexpected PHP version: ".PHP_VERSION.PHP_EOL);
     exit(1);
 }
 if (!Module::isInstalled("frisbo_awb")) {
@@ -105,4 +117,4 @@ if ($hook !== 1) {
 }
 '
 
-echo "PrestaShop $prestashop_version: frisbo_awb installation passed"
+echo "PrestaShop $prestashop_version / PHP $php_version: frisbo_awb installation passed"

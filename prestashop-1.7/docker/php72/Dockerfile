@@ -1,10 +1,12 @@
+ARG PHP_VERSION=7.2
 FROM composer:2.2.24 AS composer
 
-FROM php:7.2-apache
+FROM php:${PHP_VERSION}-apache
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG INSTALL_XDEBUG=0
+ARG PHP_VERSION=7.2
 
 RUN set -eux; \
     if ! apt-get update; then \
@@ -33,9 +35,13 @@ RUN set -eux; \
         libpng-dev \
         libxml2-dev \
         libzip-dev; \
-    docker-php-ext-configure gd \
-        --with-freetype-dir=/usr/include/ \
-        --with-jpeg-dir=/usr/include/; \
+    if [ "$PHP_VERSION" = "7.2" ]; then \
+        docker-php-ext-configure gd \
+            --with-freetype-dir=/usr/include/ \
+            --with-jpeg-dir=/usr/include/; \
+    else \
+        docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    fi; \
     docker-php-ext-install -j"$(nproc)" \
         curl \
         gd \
