@@ -14,7 +14,10 @@ RUN set -eux; \
         -e 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' \
         -e 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' \
         /etc/apt/sources.list; \
-    sed -ri '/[[:space:]](stretch|buster|bullseye)-updates[[:space:]]/d' /etc/apt/sources.list; \
+    sed -ri \
+        -e '/\/debian-security[[:space:]]/d' \
+        -e '/[[:space:]](stretch|buster|bullseye)-updates[[:space:]]/d' \
+        /etc/apt/sources.list; \
     printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' \
         > /etc/apt/apt.conf.d/99archive; \
     apt-get -o Acquire::Check-Valid-Until=false update; \
