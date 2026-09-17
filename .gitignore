@@ -1,0 +1,9 @@
+.agents/
+.codex/
+build/
+dist/
+*.zip
+*.sha256
+.DS_Store
+.idea/
+.vscode/
