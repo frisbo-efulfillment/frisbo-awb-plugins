@@ -6,17 +6,15 @@ The included local development environment defaults to PrestaShop 9.1.5 and
 PHP 8.5. Set `PRESTASHOP_VERSION` and the matching official release archive URL
 to reproduce another supported PrestaShop 9 release.
 
-The automated installation matrix covers these exact PrestaShop releases:
+Routine CI installs the module on these PrestaShop/PHP edges:
 
-- 9.1.0 through 9.1.5 on the recommended PHP 8.5 runtime;
-- 9.0.0 through 9.0.3 on the recommended PHP 8.4 runtime;
-- the complete PHP 8.1-8.5 range on 9.1.5;
-- the complete PHP 8.1-8.4 range on 9.0.3.
+- oldest supported patch 9.0.0 on PHP 8.1 and PHP 8.4;
+- newest patches 9.1.4 and 9.1.5 on PHP 8.1 and PHP 8.5.
 
-PHP syntax is also checked independently on PHP 8.1 through PHP 8.5. To cull
-or add an installation variant, edit the explicit `matrix.include` list in
-`.github/workflows/prestashop-9.yml`. Any supported pairing can be tested
-locally with `./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
+PHP syntax is also checked independently on the PHP 8.1 and PHP 8.5 edges. To
+cull or add a variant, edit the matrices in `.github/workflows/prestashop-9.yml`.
+Any supported pairing can be tested locally with
+`./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
 
 ## API mapping
 
