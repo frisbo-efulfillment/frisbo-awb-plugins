@@ -12,6 +12,7 @@ PHP syntax is also checked independently on both runtimes. To cull or add a
 variant, edit `matrix.include` in `.github/workflows/prestashop-1743.yml`.
 Any curated pairing can be reproduced with
 `./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
+The legacy CI runtime uses Debian's archived repositories for both PHP edges.
 
 ## API mapping
 

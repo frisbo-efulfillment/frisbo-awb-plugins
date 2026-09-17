@@ -9,17 +9,15 @@ ARG INSTALL_XDEBUG=0
 ARG PHP_VERSION=7.2
 
 RUN set -eux; \
-    if ! apt-get update; then \
-        sed -ri \
-            -e 's|deb.debian.org/debian|archive.debian.org/debian|g' \
-            -e 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' \
-            -e 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' \
-            /etc/apt/sources.list; \
-        sed -ri '/[[:space:]](stretch|buster)-updates[[:space:]]/d' /etc/apt/sources.list; \
-        printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' \
-            > /etc/apt/apt.conf.d/99archive; \
-        apt-get -o Acquire::Check-Valid-Until=false update; \
-    fi; \
+    sed -ri \
+        -e 's|deb.debian.org/debian|archive.debian.org/debian|g' \
+        -e 's|security.debian.org/debian-security|archive.debian.org/debian-security|g' \
+        -e 's|deb.debian.org/debian-security|archive.debian.org/debian-security|g' \
+        /etc/apt/sources.list; \
+    sed -ri '/[[:space:]](stretch|buster|bullseye)-updates[[:space:]]/d' /etc/apt/sources.list; \
+    printf 'Acquire::Check-Valid-Until "false";\nAcquire::Check-Date "false";\n' \
+        > /etc/apt/apt.conf.d/99archive; \
+    apt-get -o Acquire::Check-Valid-Until=false update; \
     apt-get install -y --no-install-recommends \
         bash \
         ca-certificates \
