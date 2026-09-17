@@ -115,7 +115,16 @@ docker exec "$shop_container" php -d memory_limit=-1 install/index_cli.php \
     --send_email=0 \
     --ssl=0
 
-docker exec "$shop_container" php bin/console prestashop:module install frisbo_awb --no-interaction
+console_php=(php)
+if [ "$php_version" = "7.4" ]; then
+    # PrestaShop 1.7.4.x dependencies emit PHP 7.4 compile-time warnings that
+    # Symfony converts into exceptions before the module command can run.
+    # Keep notices and ordinary errors enabled, but suppress warnings and both
+    # deprecated categories for these legacy-core console invocations only.
+    console_php+=("-d" "error_reporting=8189")
+fi
+
+docker exec "$shop_container" "${console_php[@]}" bin/console prestashop:module install frisbo_awb --no-interaction
 docker exec --env EXPECTED_PS_VERSION="$prestashop_version" --env EXPECTED_PHP_VERSION="$php_version" "$shop_container" php -r '
 require "/var/www/html/config/config.inc.php";
 if (_PS_VERSION_ !== getenv("EXPECTED_PS_VERSION")) {
@@ -142,7 +151,7 @@ if ($hook !== 1) {
 }
 '
 
-docker exec "$shop_container" php bin/console prestashop:module reset frisbo_awb --no-interaction
-docker exec "$shop_container" php bin/console prestashop:module uninstall frisbo_awb --no-interaction
+docker exec "$shop_container" "${console_php[@]}" bin/console prestashop:module reset frisbo_awb --no-interaction
+docker exec "$shop_container" "${console_php[@]}" bin/console prestashop:module uninstall frisbo_awb --no-interaction
 
 echo "PrestaShop $prestashop_version / PHP $php_version: frisbo_awb install, reset, and uninstall passed"

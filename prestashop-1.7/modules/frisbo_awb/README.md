@@ -16,6 +16,9 @@ The legacy CI runtime uses Debian's archived main repository for both PHP
 edges; obsolete security and update entries are removed before package setup.
 The PHP 7.4 edge additionally builds mbstring against Debian's Oniguruma
 development package, as required by that PHP generation.
+For PrestaShop 1.7.4.x on PHP 7.4, the test harness suppresses legacy-core
+warning/deprecation categories only while running Symfony console commands;
+it does not patch core or relax the module's PHP syntax checks.
 
 ## API mapping
 
