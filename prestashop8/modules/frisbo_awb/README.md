@@ -12,10 +12,10 @@ Routine CI installs the module on these PrestaShop/PHP edges:
 - oldest supported patch 8.0.1 on PHP 7.2 and PHP 8.1;
 - newest patches 8.2.7 and 8.2.8 on PHP 7.2 and PHP 8.1.
 
-Module PHP syntax is checked independently on PHP 7.2, 7.3, 7.4, 8.0, and
-8.1. PrestaShop 8 itself requires PHP 7.2.5 or newer. To cull or add a
-variant, edit `matrix.include` in `.github/workflows/prestashop-8.yml`. Any
-supported pairing can be run with
+Module PHP syntax is checked independently on the PHP 7.2 and PHP 8.1 edges.
+PrestaShop 8 itself requires PHP 7.2.5 or newer. To cull or add a variant,
+edit the matrices in `.github/workflows/prestashop-8.yml`. Any supported
+pairing can be run with
 `./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
 
 ## API mapping
