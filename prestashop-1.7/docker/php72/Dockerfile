@@ -36,6 +36,9 @@ RUN set -eux; \
         libpng-dev \
         libxml2-dev \
         libzip-dev; \
+    if [ "$PHP_VERSION" != "7.2" ]; then \
+        apt-get install -y --no-install-recommends libonig-dev; \
+    fi; \
     if [ "$PHP_VERSION" = "7.2" ]; then \
         docker-php-ext-configure gd \
             --with-freetype-dir=/usr/include/ \

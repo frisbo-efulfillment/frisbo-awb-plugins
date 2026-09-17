@@ -14,6 +14,8 @@ Any curated pairing can be reproduced with
 `./scripts/test-module-version.sh PRESTASHOP_VERSION PHP_VERSION`.
 The legacy CI runtime uses Debian's archived main repository for both PHP
 edges; obsolete security and update entries are removed before package setup.
+The PHP 7.4 edge additionally builds mbstring against Debian's Oniguruma
+development package, as required by that PHP generation.
 
 ## API mapping
 
