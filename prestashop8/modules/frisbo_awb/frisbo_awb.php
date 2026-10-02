@@ -313,12 +313,8 @@ class Frisbo_Awb extends CarrierModule
                 }
                 $html .= '<tr><td><code>'.$this->escape($backendLabel).'</code></td>';
                 $html .= '<td><input class="form-control" type="text" maxlength="64" name="friendly_name_'.$id.'" value="'.$this->escape($courier['friendly_name']).'" required></td>';
-                $linkedCarrier = !empty($courier['id_carrier'])
-                    ? new Carrier((int) $courier['id_carrier'])
-                    : false;
-                $hasUsableCarrier = $linkedCarrier
-                    && Validate::isLoadedObject($linkedCarrier)
-                    && !$linkedCarrier->deleted;
+                $hasUsableCarrier = !empty($courier['id_carrier'])
+                    && $this->getCarrierRepository()->isNativeCarrierUsable((int) $courier['id_carrier']);
                 if ($hasUsableCarrier) {
                     $carrierUrl = $this->context->link->getAdminLink(
                         'AdminCarrierWizard',

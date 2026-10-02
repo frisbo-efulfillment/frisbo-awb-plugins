@@ -38,9 +38,11 @@ class CarrierSyncService
         if (!$configuredCourier) {
             throw new PrestaShopException('The Frisbo courier was not found.');
         }
-        if (!empty($configuredCourier['id_carrier'])) {
+        if (!empty($configuredCourier['id_carrier'])
+            && $this->repository->isNativeCarrierUsable((int) $configuredCourier['id_carrier'])
+        ) {
             $linkedCarrier = new Carrier((int) $configuredCourier['id_carrier']);
-            if (Validate::isLoadedObject($linkedCarrier) && !$linkedCarrier->deleted) {
+            if (Validate::isLoadedObject($linkedCarrier)) {
                 throw new PrestaShopException('This Frisbo courier is already linked to a PrestaShop carrier.');
             }
         }
@@ -55,9 +57,11 @@ class CarrierSyncService
             throw new PrestaShopException('The Frisbo courier is not known. Refresh couriers in the module settings.');
         }
 
-        if (!empty($configuredCourier['id_carrier'])) {
+        if (!empty($configuredCourier['id_carrier'])
+            && $this->repository->isNativeCarrierUsable((int) $configuredCourier['id_carrier'])
+        ) {
             $carrier = new Carrier((int) $configuredCourier['id_carrier']);
-            if (Validate::isLoadedObject($carrier) && !$carrier->deleted) {
+            if (Validate::isLoadedObject($carrier)) {
                 return $carrier;
             }
         }
@@ -77,9 +81,11 @@ class CarrierSyncService
     public function synchronize(array $configuredCourier)
     {
         $carrier = false;
-        if (!empty($configuredCourier['id_carrier'])) {
+        if (!empty($configuredCourier['id_carrier'])
+            && $this->repository->isNativeCarrierUsable((int) $configuredCourier['id_carrier'])
+        ) {
             $candidate = new Carrier((int) $configuredCourier['id_carrier']);
-            if (Validate::isLoadedObject($candidate) && !$candidate->deleted) {
+            if (Validate::isLoadedObject($candidate)) {
                 $carrier = $candidate;
             }
         }

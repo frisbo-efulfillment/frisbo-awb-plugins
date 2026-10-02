@@ -76,6 +76,15 @@ class CarrierRepository
         return $this->findByReference((int) $carrier->id_reference, $enabledOnly);
     }
 
+    public function isNativeCarrierUsable($idCarrier)
+    {
+        return (bool) Db::getInstance()->getValue(
+            'SELECT `id_carrier` FROM `'._DB_PREFIX_.'carrier`
+             WHERE `id_carrier` = '.(int) $idCarrier.'
+               AND `deleted` = 0'
+        );
+    }
+
     public function findByReference($idReference, $enabledOnly = false)
     {
         return Db::getInstance()->getRow(
