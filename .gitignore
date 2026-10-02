@@ -7,3 +7,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+prestashop-1.7/modules/*/config.xml
+prestashop8/modules/*/config.xml
+prestashop9/modules/*/config.xml

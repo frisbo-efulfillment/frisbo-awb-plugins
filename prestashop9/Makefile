@@ -26,11 +26,11 @@ logs:
 	docker compose logs -f shop db
 
 cache-clear:
-	docker compose exec shop php -d memory_limit=-1 bin/console cache:clear --env=dev
+	docker compose exec --user www-data shop php -d memory_limit=-1 bin/console cache:clear --env=dev
 
 module-install module-uninstall module-reset module-enable module-disable:
 	@test -n "$(MODULE)" || { echo "Usage: make $@ MODULE=module_name" >&2; exit 2; }
-	docker compose exec shop php bin/console prestashop:module $(patsubst module-%,%,$@) $(MODULE)
+	docker compose exec --user www-data shop php bin/console prestashop:module $(patsubst module-%,%,$@) $(MODULE)
 
 nuke:
 	@echo "WARNING: destroying the local database volume and shop/ tree; modules/ and .cache/ are preserved."

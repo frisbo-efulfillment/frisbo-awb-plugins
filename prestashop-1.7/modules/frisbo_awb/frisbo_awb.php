@@ -8,7 +8,6 @@ require_once __DIR__.'/classes/FrisboApiException.php';
 require_once __DIR__.'/classes/FrisboClient.php';
 require_once __DIR__.'/classes/FrisboClientFactory.php';
 require_once __DIR__.'/classes/CarrierRepository.php';
-require_once __DIR__.'/classes/OrderRepository.php';
 require_once __DIR__.'/classes/ShipmentRepository.php';
 require_once __DIR__.'/classes/CodDetector.php';
 require_once __DIR__.'/classes/CarrierSyncService.php';
@@ -28,7 +27,7 @@ class Frisbo_Awb extends CarrierModule
     {
         $this->name = 'frisbo_awb';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.1.0';
+        $this->version = '1.2.0';
         $this->author = 'Frisbo';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -38,7 +37,7 @@ class Frisbo_Awb extends CarrierModule
         parent::__construct();
 
         $this->displayName = 'frisbo-awb';
-        $this->description = $this->l('Creates Frisbo AWB shipments from configured PrestaShop carriers.');
+        $this->description = $this->l('Creates Frisbo AWB shipments from PrestaShop orders.');
     }
 
     public function install()
@@ -47,7 +46,6 @@ class Frisbo_Awb extends CarrierModule
             && $this->installDatabase()
             && $this->installAdminTab()
             && $this->registerHook('actionCarrierUpdate')
-            && $this->registerHook('actionValidateOrder')
             && $this->registerHook('displayBackOfficeOrderActions')
             && $this->registerHook('displayAdminOrder');
     }
@@ -71,6 +69,12 @@ class Frisbo_Awb extends CarrierModule
                 $this->saveCredentialsFromRequest();
                 $count = $this->getCarrierSyncService()->refreshFromFrisbo($this->getClientFactory()->create());
                 $output .= $this->displayConfirmation(sprintf($this->l('%d Frisbo couriers refreshed.'), $count));
+            } elseif (Tools::isSubmit('submitFrisboCreateCarrier')) {
+                $this->saveCourierConfiguration();
+                $this->getCarrierSyncService()->createPrestaShopCarrier(
+                    (int) Tools::getValue('submitFrisboCreateCarrier')
+                );
+                $output .= $this->displayConfirmation($this->l('PrestaShop carrier created or restored.'));
             } elseif (Tools::isSubmit('submitFrisboCouriers')) {
                 $this->saveCourierConfiguration();
                 $this->getCarrierSyncService()->synchronizeAll();
@@ -120,34 +124,6 @@ class Frisbo_Awb extends CarrierModule
         $this->getCarrierRepository()->updateAfterCarrierReplacement((int) $params['id_carrier'], $newCarrier);
     }
 
-    public function hookActionValidateOrder($params)
-    {
-        if (empty($params['order']) || !($params['order'] instanceof Order)) {
-            return;
-        }
-
-        $order = $params['order'];
-        $carrierRepository = new CarrierRepository((int) $order->id_shop);
-        $configuredCourier = $carrierRepository->findByCarrierId((int) $order->id_carrier, true);
-        if (!$configuredCourier) {
-            return;
-        }
-
-        $codDetector = new CodDetector();
-        $isCod = $codDetector->isCod($order);
-        $currency = new Currency((int) $order->id_currency);
-        $repository = new OrderRepository((int) $order->id_shop);
-        $repository->createSnapshot(array(
-            'id_order' => (int) $order->id,
-            'backend_carrier_id' => $configuredCourier['backend_carrier_id'],
-            'courier_name' => $configuredCourier['friendly_name'],
-            'shipping_price' => (float) $order->total_shipping_tax_incl,
-            'is_cod' => $isCod,
-            'cod_amount' => $isCod ? $codDetector->getAmount($order) : null,
-            'currency_iso' => Validate::isLoadedObject($currency) ? $currency->iso_code : '',
-        ));
-    }
-
     public function hookDisplayBackOfficeOrderActions($params)
     {
         return $this->renderAwbButton($params);
@@ -169,8 +145,9 @@ class Frisbo_Awb extends CarrierModule
 
         return new ShipmentService(
             $factory,
-            new OrderRepository((int) $shop->id),
-            new ShipmentRepository((int) $shop->id)
+            new ShipmentRepository((int) $shop->id),
+            new CarrierRepository((int) $shop->id),
+            new CodDetector()
         );
     }
 
@@ -185,15 +162,50 @@ class Frisbo_Awb extends CarrierModule
             return '';
         }
 
-        $snapshot = (new OrderRepository((int) $order->id_shop))->findByOrderId($order->id);
-        if (!$snapshot) {
-            return '';
+        $shipment = (new ShipmentRepository((int) $order->id_shop))->findByOrderId($order->id);
+        $carrierRepository = new CarrierRepository((int) $order->id_shop);
+        $couriers = $carrierRepository->all(true);
+        $chosenCourier = false;
+        if (!$shipment || $shipment['status'] === 'failed') {
+            $configuredCourier = $carrierRepository->findByCarrierId((int) $order->id_carrier);
+            if ($configuredCourier) {
+                $nativeCarrier = new Carrier((int) $order->id_carrier, (int) $order->id_lang);
+                $chosenName = Validate::isLoadedObject($nativeCarrier)
+                    ? trim((string) $nativeCarrier->name)
+                    : '';
+                if ($chosenName === '') {
+                    $chosenName = (string) $configuredCourier['friendly_name'];
+                }
+                $chosenCourier = array(
+                    'backend_carrier_id' => (string) $configuredCourier['backend_carrier_id'],
+                    'name' => $chosenName,
+                );
+
+                $remainingCouriers = array();
+                foreach ($couriers as $courier) {
+                    if ((string) $courier['backend_carrier_id'] !== $chosenCourier['backend_carrier_id']) {
+                        $remainingCouriers[] = $courier;
+                    }
+                }
+                $couriers = $remainingCouriers;
+            }
+        }
+        $trackingUrl = $shipment && !empty($shipment['tracking_url']) ? (string) $shipment['tracking_url'] : '';
+        if ($trackingUrl !== '' && parse_url($trackingUrl, PHP_URL_SCHEME) !== 'https') {
+            $trackingUrl = '';
         }
 
         self::$awbButtonRendered = true;
         $this->context->smarty->assign(array(
             'frisbo_awb_action' => $this->context->link->getAdminLink('AdminFrisboAwb'),
             'frisbo_awb_order_id' => (int) $order->id,
+            'frisbo_awb_modal_id' => 'frisbo-awb-modal-'.(int) $order->id,
+            'frisbo_awb_generated' => $shipment && $shipment['status'] === 'generated',
+            'frisbo_awb_cancelled' => $shipment && $shipment['status'] === 'cancelled',
+            'frisbo_awb_tracking_number' => $shipment && !empty($shipment['tracking_number']) ? $shipment['tracking_number'] : '',
+            'frisbo_awb_tracking_url' => $trackingUrl,
+            'frisbo_awb_chosen_courier' => $chosenCourier,
+            'frisbo_awb_couriers' => $couriers,
         ));
 
         return $this->display(__FILE__, 'views/templates/hook/awb_button.tpl');
@@ -283,7 +295,7 @@ class Frisbo_Awb extends CarrierModule
 
         $html .= '<div class="panel"><h3><i class="icon-truck"></i> '.$this->l('Courier configuration').'</h3>';
         $html .= '<form method="post" action=""><div class="table-responsive"><table class="table">';
-        $html .= '<thead><tr><th>'.$this->l('Frisbo courier').'</th><th>'.$this->l('Friendly checkout name').'</th><th>'.$this->l('PrestaShop carrier').'</th><th>'.$this->l('Enabled').'</th></tr></thead><tbody>';
+        $html .= '<thead><tr><th>'.$this->l('Frisbo courier').'</th><th>'.$this->l('Friendly courier name').'</th><th>'.$this->l('PrestaShop carrier').'</th><th>'.$this->l('Available in AWB modal').'</th></tr></thead><tbody>';
         if (!$couriers) {
             $html .= '<tr><td colspan="4">'.$this->l('No couriers have been refreshed from Frisbo yet.').'</td></tr>';
         } else {
@@ -295,7 +307,13 @@ class Frisbo_Awb extends CarrierModule
                 }
                 $html .= '<tr><td><code>'.$this->escape($backendLabel).'</code></td>';
                 $html .= '<td><input class="form-control" type="text" maxlength="64" name="friendly_name_'.$id.'" value="'.$this->escape($courier['friendly_name']).'" required></td>';
-                if (!empty($courier['id_carrier'])) {
+                $linkedCarrier = !empty($courier['id_carrier'])
+                    ? new Carrier((int) $courier['id_carrier'])
+                    : false;
+                $hasUsableCarrier = $linkedCarrier
+                    && Validate::isLoadedObject($linkedCarrier)
+                    && !$linkedCarrier->deleted;
+                if ($hasUsableCarrier) {
                     $carrierUrl = $this->context->link->getAdminLink(
                         'AdminCarrierWizard',
                         true,
@@ -304,7 +322,10 @@ class Frisbo_Awb extends CarrierModule
                     );
                     $html .= '<td><a class="btn btn-default" href="'.$this->escape($carrierUrl).'"><i class="icon-cog"></i> '.$this->l('Configure carrier').'</a></td>';
                 } else {
-                    $html .= '<td>'.$this->l('Save to create the PrestaShop carrier.').'</td>';
+                    $buttonLabel = (!empty($courier['id_carrier']) || !empty($courier['id_reference']))
+                        ? $this->l('Recreate hidden carrier')
+                        : $this->l('Create PrestaShop carrier');
+                    $html .= '<td><button class="btn btn-default" type="submit" name="submitFrisboCreateCarrier" value="'.$id.'"><i class="icon-plus"></i> '.$buttonLabel.'</button></td>';
                 }
                 $html .= '<td><input type="checkbox" name="enabled_'.$id.'" value="1"'.($courier['enabled'] ? ' checked' : '').'></td></tr>';
             }
@@ -363,21 +384,6 @@ class Frisbo_Awb extends CarrierModule
                 UNIQUE KEY `uniq_frisbo_carrier_shop_backend` (`id_shop`, `backend_carrier_id`),
                 KEY `idx_frisbo_carrier_reference` (`id_shop`, `id_reference`)
             ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
-            'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'frisbo_awb_order` (
-                `id_frisbo_awb_order` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `id_shop` INT UNSIGNED NOT NULL,
-                `id_order` INT UNSIGNED NOT NULL,
-                `backend_carrier_id` VARCHAR(191) NOT NULL,
-                `courier_name` VARCHAR(255) NOT NULL,
-                `shipping_price` DECIMAL(20,6) NOT NULL,
-                `is_cod` TINYINT(1) NOT NULL DEFAULT 0,
-                `cod_amount` DECIMAL(20,6) NULL,
-                `currency_iso` VARCHAR(8) NULL,
-                `date_add` DATETIME NOT NULL,
-                `date_upd` DATETIME NOT NULL,
-                PRIMARY KEY (`id_frisbo_awb_order`),
-                UNIQUE KEY `uniq_frisbo_order_shop_order` (`id_shop`, `id_order`)
-            ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci',
             'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'frisbo_awb_shipment` (
                 `id_frisbo_awb_shipment` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `id_shop` INT UNSIGNED NOT NULL,
@@ -387,6 +393,7 @@ class Frisbo_Awb extends CarrierModule
                 `shipment_uid` VARCHAR(191) NULL,
                 `status` VARCHAR(32) NOT NULL,
                 `tracking_number` VARCHAR(191) NULL,
+                `tracking_url` VARCHAR(2048) NULL,
                 `last_error` TEXT NULL,
                 `date_add` DATETIME NOT NULL,
                 `date_upd` DATETIME NOT NULL,

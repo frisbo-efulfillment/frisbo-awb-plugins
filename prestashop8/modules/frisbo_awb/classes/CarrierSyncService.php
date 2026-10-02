@@ -19,7 +19,6 @@ class CarrierSyncService
         foreach ($couriers as $courier) {
             $this->repository->upsertDiscovered($courier);
         }
-        $this->synchronizeAll();
 
         return count($couriers);
     }
@@ -27,8 +26,52 @@ class CarrierSyncService
     public function synchronizeAll()
     {
         foreach ($this->repository->all() as $configuredCourier) {
-            $this->synchronize($configuredCourier);
+            if (!empty($configuredCourier['id_carrier']) || !empty($configuredCourier['id_reference'])) {
+                $this->synchronize($configuredCourier);
+            }
         }
+    }
+
+    public function createPrestaShopCarrier($idConfiguredCourier)
+    {
+        $configuredCourier = $this->repository->findById((int) $idConfiguredCourier);
+        if (!$configuredCourier) {
+            throw new PrestaShopException('The Frisbo courier was not found.');
+        }
+        if (!empty($configuredCourier['id_carrier'])) {
+            $linkedCarrier = new Carrier((int) $configuredCourier['id_carrier']);
+            if (Validate::isLoadedObject($linkedCarrier) && !$linkedCarrier->deleted) {
+                throw new PrestaShopException('This Frisbo courier is already linked to a PrestaShop carrier.');
+            }
+        }
+
+        return $this->ensureHiddenCarrierForBackendId($configuredCourier['backend_carrier_id']);
+    }
+
+    public function ensureHiddenCarrierForBackendId($backendCarrierId)
+    {
+        $configuredCourier = $this->repository->findByBackendId((string) $backendCarrierId);
+        if (!$configuredCourier) {
+            throw new PrestaShopException('The Frisbo courier is not known. Refresh couriers in the module settings.');
+        }
+
+        if (!empty($configuredCourier['id_carrier'])) {
+            $carrier = new Carrier((int) $configuredCourier['id_carrier']);
+            if (Validate::isLoadedObject($carrier) && !$carrier->deleted) {
+                return $carrier;
+            }
+        }
+
+        $this->synchronize($configuredCourier);
+        $configuredCourier = $this->repository->findByBackendId((string) $backendCarrierId);
+        $carrier = $configuredCourier && !empty($configuredCourier['id_carrier'])
+            ? new Carrier((int) $configuredCourier['id_carrier'])
+            : false;
+        if (!$carrier || !Validate::isLoadedObject($carrier) || $carrier->deleted) {
+            throw new PrestaShopException('Could not create or restore the hidden PrestaShop carrier.');
+        }
+
+        return $carrier;
     }
 
     public function synchronize(array $configuredCourier)
@@ -56,15 +99,10 @@ class CarrierSyncService
             }
         }
 
-        if (!$carrier && !(bool) $configuredCourier['enabled']) {
-            return;
-        }
-
         if (!$carrier) {
-            $carrier = $this->createCarrier($configuredCourier);
+            $carrier = $this->createCarrier($configuredCourier, false);
         } else {
             $carrier->name = Tools::substr($configuredCourier['friendly_name'], 0, 64);
-            $carrier->active = (bool) $configuredCourier['enabled'];
             $carrier->is_module = true;
             $carrier->external_module_name = 'frisbo_awb';
             $carrier->shipping_external = false;
@@ -81,11 +119,11 @@ class CarrierSyncService
         );
     }
 
-    private function createCarrier(array $configuredCourier)
+    private function createCarrier(array $configuredCourier, $active)
     {
         $carrier = new Carrier();
         $carrier->name = Tools::substr($configuredCourier['friendly_name'], 0, 64);
-        $carrier->active = (bool) $configuredCourier['enabled'];
+        $carrier->active = (bool) $active;
         $carrier->deleted = false;
         $carrier->is_module = true;
         $carrier->external_module_name = 'frisbo_awb';
@@ -102,8 +140,8 @@ class CarrierSyncService
         if (!$carrier->add()) {
             throw new PrestaShopException('Could not create the PrestaShop carrier.');
         }
-        // Carrier::add() writes id_reference directly in SQL but does not
-        // consistently refresh the in-memory object across supported versions.
+        // Carrier::add() writes id_reference directly in SQL in PrestaShop 1.7.4,
+        // but does not refresh the in-memory object.
         $carrier->id_reference = (int) $carrier->id;
 
         foreach (Zone::getZones(true) as $zone) {

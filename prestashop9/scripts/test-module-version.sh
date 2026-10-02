@@ -152,9 +152,58 @@ $carrierRepository->upsertDiscovered(array("id" => "CI_NATIVE_RATE", "name" => "
 $carrierSync = new CarrierSyncService($carrierRepository, $idLang, $idShop);
 $carrierSync->synchronizeAll();
 $configuredCarrier = $carrierRepository->findByBackendId("CI_NATIVE_RATE");
+if (!empty($configuredCarrier["id_carrier"]) || !empty($configuredCarrier["id_reference"])) {
+    fwrite(STDERR, "Courier discovery automatically created a PrestaShop carrier.".PHP_EOL);
+    exit(1);
+}
+$unlinkedConfigurationHtml = $module->getContent();
+if (strpos($unlinkedConfigurationHtml, "Create PrestaShop carrier") === false) {
+    fwrite(STDERR, "The explicit carrier creation button is missing.".PHP_EOL);
+    exit(1);
+}
+$carrierSync->createPrestaShopCarrier((int) $configuredCarrier["id_frisbo_awb_carrier"]);
+$configuredCarrier = $carrierRepository->findByBackendId("CI_NATIVE_RATE");
 $nativeCarrier = new Carrier((int) $configuredCarrier["id_carrier"]);
-if (!Validate::isLoadedObject($nativeCarrier) || (bool) $nativeCarrier->shipping_external) {
-    fwrite(STDERR, "The managed carrier is not using native PrestaShop pricing.".PHP_EOL);
+if (!Validate::isLoadedObject($nativeCarrier)
+    || (bool) $nativeCarrier->shipping_external
+    || (bool) $nativeCarrier->active
+) {
+    fwrite(STDERR, "The managed carrier is not hidden or is not using native PrestaShop pricing.".PHP_EOL);
+    exit(1);
+}
+$carrierRepository->updateConfiguration(
+    (int) $configuredCarrier["id_frisbo_awb_carrier"],
+    "CI Native Rate",
+    false
+);
+foreach ($carrierRepository->all(true) as $enabledCourier) {
+    if ($enabledCourier["backend_carrier_id"] === "CI_NATIVE_RATE") {
+        fwrite(STDERR, "A disabled courier remains available in the AWB modal list.".PHP_EOL);
+        exit(1);
+    }
+}
+$carrierRepository->updateConfiguration(
+    (int) $configuredCarrier["id_frisbo_awb_carrier"],
+    "CI Native Rate",
+    true
+);
+$deletedCarrierId = (int) $nativeCarrier->id;
+Db::getInstance()->update("carrier", array("deleted" => 1), "id_carrier = ".$deletedCarrierId);
+$deletedConfigurationHtml = $module->getContent();
+if (strpos($deletedConfigurationHtml, "Recreate hidden carrier") === false) {
+    fwrite(STDERR, "A deleted carrier does not expose the recreate action.".PHP_EOL);
+    exit(1);
+}
+$nativeCarrier = $carrierSync->createPrestaShopCarrier(
+    (int) $configuredCarrier["id_frisbo_awb_carrier"]
+);
+$configuredCarrier = $carrierRepository->findByBackendId("CI_NATIVE_RATE");
+if ((int) $nativeCarrier->id === $deletedCarrierId
+    || (bool) $nativeCarrier->active
+    || (bool) $nativeCarrier->deleted
+    || (int) $configuredCarrier["id_carrier"] !== (int) $nativeCarrier->id
+) {
+    fwrite(STDERR, "The deleted carrier mapping was not repaired with a hidden carrier.".PHP_EOL);
     exit(1);
 }
 $cart = new Cart();
@@ -178,6 +227,58 @@ $carrierPriceColumn = (int) Db::getInstance()->getValue(
 if ($carrierPriceColumn !== 0) {
     fwrite(STDERR, "The courier configuration table still owns a shipping price.".PHP_EOL);
     exit(1);
+}
+$trackingUrlColumn = (int) Db::getInstance()->getValue(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = \""._DB_PREFIX_."frisbo_awb_shipment\"
+       AND COLUMN_NAME = \"tracking_url\""
+);
+if ($trackingUrlColumn !== 1) {
+    fwrite(STDERR, "The shipment tracking URL column is missing.".PHP_EOL);
+    exit(1);
+}
+$replacementOrder = new Order();
+$replacementOrder->id = 2147480000;
+$shipmentService = $module->getShipmentService($idShop);
+$generationMethod = new ReflectionMethod("ShipmentService", "getGenerationExternalId");
+$generationMethod->setAccessible(true);
+if ($generationMethod->invoke($shipmentService, $replacementOrder, array(
+    "status" => "cancelled",
+    "external_reference" => "prestashop:2147480000",
+)) !== "2147480000:2"
+    || $generationMethod->invoke($shipmentService, $replacementOrder, array(
+        "status" => "cancelled",
+        "external_reference" => "prestashop:2147480000:2",
+    )) !== "2147480000:3"
+) {
+    fwrite(STDERR, "Cancelled shipments do not advance to a replacement external reference.".PHP_EOL);
+    exit(1);
+}
+$shipmentRepository = new ShipmentRepository($idShop);
+Db::getInstance()->execute("START TRANSACTION");
+try {
+    $shipmentRepository->begin(2147480000, "prestashop:2147480000", "prestashop:2147480000");
+    $shipmentRepository->markGenerated(2147480000, array(
+        "uid" => "ci-cancelled-shipment",
+        "external_reference" => "prestashop:2147480000",
+    ));
+    $shipmentRepository->markCancelled(2147480000);
+    $replacementStarted = $shipmentRepository->begin(
+        2147480000,
+        "prestashop:2147480000:2",
+        "prestashop:2147480000:2"
+    );
+    $replacementRow = $shipmentRepository->findByOrderId(2147480000);
+    if (!$replacementStarted
+        || $replacementRow["status"] !== "creating"
+        || $replacementRow["external_reference"] !== "prestashop:2147480000:2"
+        || !empty($replacementRow["shipment_uid"])
+    ) {
+        throw new Exception("A cancelled shipment cannot transition to a clean replacement attempt.");
+    }
+} finally {
+    Db::getInstance()->execute("ROLLBACK");
 }
 Db::getInstance()->update("carrier", array("shipping_external" => 1), "id_carrier = ".(int) $nativeCarrier->id);
 require_once "/var/www/html/modules/frisbo_awb/upgrade/upgrade-3.1.0.php";

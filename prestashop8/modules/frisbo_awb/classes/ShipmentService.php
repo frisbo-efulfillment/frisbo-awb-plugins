@@ -3,26 +3,24 @@
 class ShipmentService
 {
     private $clientFactory;
-    private $orderRepository;
     private $shipmentRepository;
+    private $carrierRepository;
+    private $codDetector;
 
     public function __construct(
         FrisboClientFactory $clientFactory,
-        OrderRepository $orderRepository,
-        ShipmentRepository $shipmentRepository
+        ShipmentRepository $shipmentRepository,
+        CarrierRepository $carrierRepository,
+        CodDetector $codDetector
     ) {
         $this->clientFactory = $clientFactory;
-        $this->orderRepository = $orderRepository;
         $this->shipmentRepository = $shipmentRepository;
+        $this->carrierRepository = $carrierRepository;
+        $this->codDetector = $codDetector;
     }
 
-    public function getLabel(Order $order)
+    public function getLabel(Order $order, $backendCarrierId = null)
     {
-        $savedOrder = $this->orderRepository->findByOrderId($order->id);
-        if (!$savedOrder) {
-            throw new PrestaShopException('This order does not have a Frisbo courier snapshot.');
-        }
-
         $client = $this->clientFactory->create();
         $shipmentRecord = $this->shipmentRepository->findByOrderId($order->id);
 
@@ -33,12 +31,13 @@ class ShipmentService
             if ($shipmentRecord && $shipmentRecord['status'] === 'uncertain') {
                 throw new PrestaShopException('Frisbo reported an uncertain shipment result. Reconcile it before retrying.');
             }
-
-            $payload = $this->buildShipment($order, $savedOrder);
+            $externalId = $this->getGenerationExternalId($order, $shipmentRecord);
+            $externalReference = 'prestashop:'.$externalId;
+            $payload = $this->buildShipment($order, $backendCarrierId, $externalId);
             if (!$this->shipmentRepository->begin(
                 $order->id,
-                'prestashop:'.$order->id,
-                'prestashop:'.$order->id
+                $externalReference,
+                $externalReference
             )) {
                 $shipmentRecord = $this->shipmentRepository->findByOrderId($order->id);
                 if (!$shipmentRecord || $shipmentRecord['status'] !== 'generated') {
@@ -60,20 +59,114 @@ class ShipmentService
                     throw $exception;
                 }
             }
+
+            $shipmentRecord = $this->shipmentRepository->findByOrderId($order->id);
         }
 
-        return $client->downloadLabelByExternalId('prestashop', (string) $order->id);
+        $externalId = $this->getStoredExternalId($order, $shipmentRecord);
+        $remoteShipment = $client->getShipmentByExternalId('prestashop', $externalId);
+        if ($this->isCancelledRemoteShipment($remoteShipment)) {
+            $this->shipmentRepository->markCancelled($order->id);
+            throw new PrestaShopException('This Frisbo AWB has been cancelled. Reload the order to generate a new one.');
+        }
+        $this->synchronizeTracking($order, $remoteShipment);
+
+        return $client->downloadLabelByExternalId('prestashop', $externalId);
     }
 
-    public function buildShipment(Order $order, array $savedOrder)
+    public function hasGeneratedShipment(Order $order)
+    {
+        $shipment = $this->shipmentRepository->findByOrderId($order->id);
+
+        return $shipment && $shipment['status'] === 'generated';
+    }
+
+    public function hasCancelledShipment(Order $order)
+    {
+        $shipment = $this->shipmentRepository->findByOrderId($order->id);
+
+        return $shipment && $shipment['status'] === 'cancelled';
+    }
+
+    public function getShipmentStatus(Order $order)
+    {
+        $shipment = $this->shipmentRepository->findByOrderId($order->id);
+
+        return $shipment && !empty($shipment['status']) ? (string) $shipment['status'] : 'none';
+    }
+
+    public function cancelShipment(Order $order)
+    {
+        $shipment = $this->shipmentRepository->findByOrderId($order->id);
+        if ($shipment && $shipment['status'] === 'cancelled') {
+            return array('uid' => (string) $shipment['shipment_uid'], 'status' => 'cancelled');
+        }
+        if (!$shipment || $shipment['status'] !== 'generated' || empty($shipment['shipment_uid'])) {
+            throw new PrestaShopException('No generated Frisbo AWB is available to cancel for this order.');
+        }
+
+        $client = $this->clientFactory->create();
+        $remoteShipment = $client->getShipmentByExternalId(
+            'prestashop',
+            $this->getStoredExternalId($order, $shipment)
+        );
+        if ($this->isCancelledRemoteShipment($remoteShipment)) {
+            if (!$this->shipmentRepository->markCancelled($order->id)) {
+                throw new PrestaShopException('The AWB is cancelled in Frisbo, but its local status could not be saved.');
+            }
+
+            return array('uid' => (string) $shipment['shipment_uid'], 'status' => 'cancelled');
+        }
+
+        try {
+            $result = $client->cancelShipmentByUid($shipment['shipment_uid']);
+        } catch (FrisboApiException $exception) {
+            // A timeout, 409, or 502 can be returned after the backend has
+            // accepted the cancellation. Reconcile before reporting failure.
+            try {
+                $remoteShipment = $client->getShipmentByExternalId(
+                    'prestashop',
+                    $this->getStoredExternalId($order, $shipment)
+                );
+                if ($this->isCancelledRemoteShipment($remoteShipment)) {
+                    if (!$this->shipmentRepository->markCancelled($order->id)) {
+                        throw new PrestaShopException('The AWB is cancelled in Frisbo, but its local status could not be saved.');
+                    }
+
+                    return array('uid' => (string) $shipment['shipment_uid'], 'status' => 'cancelled');
+                }
+            } catch (PrestaShopException $reconciliationException) {
+                throw $reconciliationException;
+            } catch (Exception $reconciliationException) {
+                // Preserve the original Frisbo cancellation error when the
+                // reconciliation lookup itself is unavailable.
+            }
+
+            throw $exception;
+        }
+        if ((string) $result['uid'] !== (string) $shipment['shipment_uid']) {
+            throw new PrestaShopException('Frisbo returned a different shipment UID during cancellation.');
+        }
+        if (!$this->shipmentRepository->markCancelled($order->id)) {
+            throw new PrestaShopException('The AWB was cancelled in Frisbo, but its local status could not be saved.');
+        }
+
+        return $result;
+    }
+
+    public function buildShipment(Order $order, $backendCarrierId = null, $externalId = null)
     {
         $address = new Address((int) $order->id_address_delivery);
         $customer = new Customer((int) $order->id_customer);
         $country = new Country((int) $address->id_country, (int) $order->id_lang);
         $state = $address->id_state ? new State((int) $address->id_state) : null;
+        $currency = new Currency((int) $order->id_currency);
 
-        if (!Validate::isLoadedObject($address) || !Validate::isLoadedObject($country)) {
-            throw new PrestaShopException('The delivery address is invalid.');
+        if (!Validate::isLoadedObject($address)
+            || !Validate::isLoadedObject($country)
+            || !Validate::isLoadedObject($currency)
+        ) {
+            throw new PrestaShopException('The order delivery address or currency is invalid.');
         }
 
         $products = array();
@@ -104,19 +197,22 @@ class ShipmentService
         $areaLevel1 = ($state && Validate::isLoadedObject($state)) ? $state->name : $country->name;
         $areaLevel2 = trim((string) $address->city);
 
+        $selectedCourier = $this->resolveCourier($backendCarrierId);
+        $isCod = $this->codDetector->isCod($order);
+
         return array(
             'external' => array(
                 'platform' => 'prestashop',
-                'id' => (string) $order->id,
+                'id' => $externalId === null ? (string) $order->id : (string) $externalId,
             ),
             'courier' => array(
-                'id' => $savedOrder['backend_carrier_id'],
-                'name' => $savedOrder['courier_name'],
+                'id' => $selectedCourier['id'],
+                'name' => $selectedCourier['name'],
             ),
             'cod' => array(
-                'enabled' => (bool) $savedOrder['is_cod'],
-                'amount' => $savedOrder['cod_amount'] === null ? null : (float) $savedOrder['cod_amount'],
-                'currency' => $savedOrder['currency_iso'],
+                'enabled' => $isCod,
+                'amount' => $isCod ? $this->codDetector->getAmount($order) : null,
+                'currency' => (string) $currency->iso_code,
             ),
             'recipient' => array(
                 'name' => $companyOrPerson !== '' ? $companyOrPerson : $contactName,
@@ -139,9 +235,163 @@ class ShipmentService
             )),
             'totals' => array(
                 'declared_value' => (float) $order->total_paid_tax_incl,
-                'shipping' => (float) $savedOrder['shipping_price'],
+                'shipping' => (float) $order->total_shipping_tax_incl,
             ),
             'notes' => 'Order reference: '.(string) $order->reference,
         );
+    }
+
+    private function getStoredExternalId(Order $order, array $shipment = null)
+    {
+        $prefix = 'prestashop:';
+        if ($shipment
+            && isset($shipment['external_reference'])
+            && strpos((string) $shipment['external_reference'], $prefix) === 0
+        ) {
+            return Tools::substr((string) $shipment['external_reference'], Tools::strlen($prefix));
+        }
+
+        return (string) $order->id;
+    }
+
+    private function getGenerationExternalId(Order $order, array $shipment = null)
+    {
+        if (!$shipment || $shipment['status'] !== 'cancelled') {
+            return $this->getStoredExternalId($order, $shipment);
+        }
+
+        $current = $this->getStoredExternalId($order, $shipment);
+        $orderId = (string) $order->id;
+        if ($current === $orderId) {
+            return $orderId.':2';
+        }
+        if (preg_match('/^'.preg_quote($orderId, '/').':([2-9][0-9]*)$/', $current, $matches)) {
+            return $orderId.':'.((int) $matches[1] + 1);
+        }
+
+        throw new PrestaShopException('The stored Frisbo external reference is invalid.');
+    }
+
+    private function isCancelledRemoteShipment(array $shipment)
+    {
+        return (isset($shipment['status']) && (string) $shipment['status'] === 'cancelled')
+            || (isset($shipment['cancellation_status'])
+                && (string) $shipment['cancellation_status'] === 'cancelled');
+    }
+
+    private function resolveCourier($backendCarrierId)
+    {
+        $backendCarrierId = trim((string) $backendCarrierId);
+        if ($backendCarrierId === '' || $backendCarrierId === 'auto') {
+            return array('id' => null, 'name' => 'Auto');
+        }
+
+        $courier = $this->carrierRepository->findByBackendId($backendCarrierId);
+        if (!$courier) {
+            throw new PrestaShopException('The selected Frisbo courier is not available for this shop.');
+        }
+
+        $name = trim((string) $courier['backend_name']);
+
+        return array(
+            'id' => (string) $courier['backend_carrier_id'],
+            'name' => $name !== '' ? $name : (string) $courier['backend_carrier_id'],
+        );
+    }
+
+    private function synchronizeTracking(Order $order, array $shipment)
+    {
+        $this->synchronizeCarrier($order, isset($shipment['courier_id']) ? $shipment['courier_id'] : null);
+
+        $trackingNumber = empty($shipment['tracking_number'])
+            ? null
+            : Tools::substr((string) $shipment['tracking_number'], 0, 191);
+        $trackingUrl = empty($shipment['tracking_url'])
+            ? null
+            : Tools::substr((string) $shipment['tracking_url'], 0, 2048);
+
+        if (!$this->shipmentRepository->updateTracking($order->id, $trackingNumber, $trackingUrl)) {
+            throw new PrestaShopException('Could not save the Frisbo tracking details.');
+        }
+        if ($trackingNumber === null) {
+            return;
+        }
+
+        $nativeTrackingNumber = Tools::substr($trackingNumber, 0, 64);
+        if (!Validate::isTrackingNumber($nativeTrackingNumber)) {
+            return;
+        }
+
+        $idOrderCarrier = (int) $order->getIdOrderCarrier();
+        if ($idOrderCarrier) {
+            $orderCarrier = new OrderCarrier($idOrderCarrier);
+            if (Validate::isLoadedObject($orderCarrier)) {
+                $orderCarrier->tracking_number = $nativeTrackingNumber;
+                if (!$orderCarrier->update()) {
+                    throw new PrestaShopException('Could not save the tracking number on the PrestaShop order carrier.');
+                }
+            }
+        }
+
+        $nativeShipmentTable = _DB_PREFIX_.'shipment';
+        $hasNativeShipmentTable = (int) Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = \''.pSQL($nativeShipmentTable).'\''
+        );
+        if ($hasNativeShipmentTable) {
+            Db::getInstance()->update(
+                'shipment',
+                array('tracking_number' => pSQL($nativeTrackingNumber)),
+                '`id_order` = '.(int) $order->id
+            );
+        }
+    }
+
+    private function synchronizeCarrier(Order $order, $backendCarrierId)
+    {
+        $backendCarrierId = trim((string) $backendCarrierId);
+        if ($backendCarrierId === '') {
+            return;
+        }
+
+        $configuredCarrier = $this->carrierRepository->findByBackendId($backendCarrierId);
+        if (!$configuredCarrier) {
+            return;
+        }
+
+        $carrier = empty($configuredCarrier['id_carrier'])
+            ? false
+            : new Carrier((int) $configuredCarrier['id_carrier']);
+        if (!$carrier || !Validate::isLoadedObject($carrier) || $carrier->deleted) {
+            $carrierSync = new CarrierSyncService(
+                $this->carrierRepository,
+                (int) $order->id_lang,
+                (int) $order->id_shop
+            );
+            $carrier = $carrierSync->ensureHiddenCarrierForBackendId($backendCarrierId);
+        }
+        $idCarrier = (int) $carrier->id;
+
+        $db = Db::getInstance();
+        $db->execute('START TRANSACTION');
+        try {
+            if (!$db->update(
+                'orders',
+                array('id_carrier' => $idCarrier),
+                '`id_order` = '.(int) $order->id.' AND `id_shop` = '.(int) $order->id_shop
+            ) || !$db->update(
+                'order_carrier',
+                array('id_carrier' => $idCarrier),
+                '`id_order` = '.(int) $order->id
+            )) {
+                throw new PrestaShopException('Could not save the Frisbo courier on the PrestaShop shipment.');
+            }
+            $db->execute('COMMIT');
+            $order->id_carrier = $idCarrier;
+        } catch (Exception $exception) {
+            $db->execute('ROLLBACK');
+            throw $exception;
+        }
     }
 }

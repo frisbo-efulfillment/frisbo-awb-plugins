@@ -107,7 +107,7 @@ docker compose exec -T shop \
     --ssl=0
 
 docker compose exec -T shop rm -rf /var/www/html/install
-docker compose exec -T shop php -d memory_limit=-1 bin/console cache:clear --env=dev
+docker compose exec -T --user www-data shop php -d memory_limit=-1 bin/console cache:clear --env=dev
 
 echo "Store:      $PS_DOMAIN"
 echo "Back office $PS_DOMAIN/$PS_ADMIN_DIR"

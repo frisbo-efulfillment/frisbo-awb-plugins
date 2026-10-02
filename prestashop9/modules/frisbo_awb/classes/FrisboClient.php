@@ -59,25 +59,7 @@ class FrisboClient
     public function downloadLabelByExternalId($platform, $externalId)
     {
         $externalReference = $this->buildExternalReference($platform, $externalId);
-        $shipments = $this->requestJson(
-            'GET',
-            '/api/shipments?external_reference='.rawurlencode($externalReference)
-        );
-
-        if (!is_array($shipments) || count($shipments) < 1) {
-            throw new FrisboApiException('No Frisbo shipment was found for this order.', 404);
-        }
-
-        $shipment = null;
-        foreach ($shipments as $candidate) {
-            if (is_array($candidate)
-                && isset($candidate['external_reference'])
-                && (string) $candidate['external_reference'] === $externalReference
-            ) {
-                $shipment = $candidate;
-                break;
-            }
-        }
+        $shipment = $this->findShipmentByExternalReference($externalReference);
 
         if ($shipment === null || empty($shipment['documents']) || !is_array($shipment['documents'])) {
             throw new FrisboApiException('The Frisbo shipment does not have a label yet.', 404);
@@ -108,6 +90,71 @@ class FrisboClient
         );
     }
 
+    public function getShipmentByExternalId($platform, $externalId)
+    {
+        $externalReference = $this->buildExternalReference($platform, $externalId);
+        $shipment = $this->findShipmentByExternalReference($externalReference);
+
+        return array(
+            'uid' => isset($shipment['uid']) ? (string) $shipment['uid'] : '',
+            'external_reference' => $externalReference,
+            'status' => isset($shipment['status']) ? (string) $shipment['status'] : '',
+            'cancellation_status' => isset($shipment['cancellation_status'])
+                ? (string) $shipment['cancellation_status']
+                : null,
+            'courier_id' => empty($shipment['courier_id']) ? null : (string) $shipment['courier_id'],
+            'tracking_number' => empty($shipment['tracking_number']) ? null : (string) $shipment['tracking_number'],
+            'tracking_url' => empty($shipment['tracking_url']) ? null : (string) $shipment['tracking_url'],
+        );
+    }
+
+    private function findShipmentByExternalReference($externalReference)
+    {
+        $shipments = $this->requestJson(
+            'GET',
+            '/api/shipments?external_reference='.rawurlencode($externalReference)
+        );
+        if (!is_array($shipments) || count($shipments) < 1) {
+            throw new FrisboApiException('No Frisbo shipment was found for this order.', 404);
+        }
+
+        foreach ($shipments as $shipment) {
+            if (is_array($shipment)
+                && isset($shipment['external_reference'])
+                && (string) $shipment['external_reference'] === $externalReference
+            ) {
+                return $shipment;
+            }
+        }
+
+        throw new FrisboApiException('No Frisbo shipment was found for this order.', 404);
+    }
+
+    public function cancelShipmentByUid($shipmentUid)
+    {
+        $shipmentUid = trim((string) $shipmentUid);
+        if ($shipmentUid === '') {
+            throw new FrisboApiException('A Frisbo shipment UID is required for cancellation.');
+        }
+
+        $response = $this->requestJson(
+            'POST',
+            '/api/shipments/'.rawurlencode($shipmentUid).'/cancel'
+        );
+        if (!is_array($response)
+            || empty($response['uid'])
+            || !isset($response['status'])
+            || (string) $response['status'] !== 'cancelled'
+        ) {
+            throw new FrisboApiException('Frisbo returned an invalid cancellation response.');
+        }
+
+        return array(
+            'uid' => (string) $response['uid'],
+            'status' => 'cancelled',
+        );
+    }
+
     private function mapShipment(array $shipment)
     {
         foreach (array('external', 'courier', 'recipient', 'cod', 'parcels') as $required) {
@@ -122,7 +169,6 @@ class FrisboClient
                 $shipment['external']['platform'],
                 $shipment['external']['id']
             ),
-            'courier_id' => (string) $shipment['courier']['id'],
             'address_to' => array(
                 'name' => (string) $recipient['name'],
                 'contact_name' => (string) $recipient['contact_name'],
@@ -140,6 +186,10 @@ class FrisboClient
             'parcels' => array(),
             'shipment_notes' => $this->buildShipmentNotes($shipment),
         );
+
+        if (!empty($shipment['courier']['id'])) {
+            $payload['courier_id'] = (string) $shipment['courier']['id'];
+        }
 
         if (!empty($recipient['email'])) {
             $payload['address_to']['email'] = (string) $recipient['email'];
@@ -219,7 +269,7 @@ class FrisboClient
         return $url;
     }
 
-    private function requestJson($method, $path, ?array $payload = null, array $expectedStatuses = array(200))
+    private function requestJson($method, $path, array $payload = null, array $expectedStatuses = array(200))
     {
         $response = $this->request($method, $this->baseUrl.$path, $payload, $expectedStatuses, false);
         $decoded = json_decode($response['body'], true);
@@ -230,7 +280,7 @@ class FrisboClient
         return $decoded;
     }
 
-    private function request($method, $url, ?array $payload = null, array $expectedStatuses = array(200), $binary = false)
+    private function request($method, $url, array $payload = null, array $expectedStatuses = array(200), $binary = false)
     {
         $headers = array(
             'Accept: '.($binary ? 'application/pdf, application/octet-stream' : 'application/json'),

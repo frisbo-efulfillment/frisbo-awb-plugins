@@ -36,11 +36,12 @@ class CarrierRepository
         ), true, true, Db::INSERT_IGNORE);
     }
 
-    public function all()
+    public function all($enabledOnly = false)
     {
         $rows = Db::getInstance()->executeS(
             'SELECT * FROM `'._DB_PREFIX_.'frisbo_awb_carrier`
-             WHERE `id_shop` = '.(int) $this->idShop.'
+             WHERE `id_shop` = '.(int) $this->idShop.
+             ($enabledOnly ? ' AND `enabled` = 1' : '').'
              ORDER BY `backend_name`, `backend_carrier_id`'
         );
 

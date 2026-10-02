@@ -31,16 +31,42 @@ The HTTP client follows the Frisbo AWB OpenAPI document served at
 - authentication: bearer API token;
 - courier discovery: `GET /api/couriers`;
 - shipment creation: `POST /api/shipments`;
+- shipment cancellation: `POST /api/shipments/{shipment_uid}/cancel`;
 - external lookup: `GET /api/shipments?external_reference=...`;
 - label content: the first documented shipment document `download_url`.
 
 The internal identity `(platform, external ID)` is serialized as
-`platform:externalId` in the documented `external_reference` field. The saved
-customer-facing courier name is placed in the documented `shipment_notes`
-field. The Frisbo courier identity is sent as `courier_id`. Shipment creation
-omits `uid`; the stable
-`external_reference = prestashop:<order ID>` is used for idempotency and label
-lookup.
+`platform:externalId` in the documented `external_reference` field. On the
+Back Office order page, AWB opens a courier-selection modal. Selecting Auto
+omits `courier_id`, allowing Frisbo to select the courier; selecting a named
+Frisbo courier sends its validated backend identity as `courier_id`. Shipment
+creation omits `uid`; `external_reference = prestashop:<order ID>` is used for
+the first AWB's idempotency and label lookup. A replacement generated after
+cancellation uses `prestashop:<order ID>:2`, then `:3`, and so on. A failed or
+uncertain attempt retains its reference so a retry cannot create a duplicate.
+Once generated, the modal offers label download without creating a second
+shipment. It also offers a red **Cancel AWB** action backed by
+`POST /api/shipments/{shipment_uid}/cancel`; the top-right × only dismisses
+the modal. Cancellation first reconciles the remote shipment, making it safe
+when Frisbo already reports it as cancelled. The modal then permits a new AWB.
+
+After shipment creation or label reprint, the module refreshes the Frisbo
+shipment by external reference. It saves `tracking_number` on PrestaShop's
+native order carrier (and native shipment table when that feature exists), and
+saves both `tracking_number` and the per-order `tracking_url` on the module's
+shipment record. The AWB modal renders the number as a tracking link. Native
+carrier tracking URLs are global templates, so they are not overwritten with
+an order-specific Frisbo URL. The returned Frisbo `courier_id` is also saved as
+the order's native carrier association, so the Shipping section shows the
+actual courier while retaining the original shipping cost. If that courier is
+not linked yet, the module creates a hidden native carrier for this purpose.
+
+The AWB action is available on every order, regardless of the checkout
+carrier. Recipient, totals, currency, payment module, and COD value are read
+from the current PrestaShop order when Generate is clicked; no checkout
+snapshot is created or required. Before the first AWB, a linked checkout
+carrier is preselected first as **Chosen by customer**, followed by **Auto:
+lowest cost** and the other enabled Frisbo couriers.
 
 Products and totals remain part of the internal normalized shipment model.
 Only fields accepted by the current Frisbo `CreateShipment` schema are sent.
@@ -48,7 +74,17 @@ Only fields accepted by the current Frisbo `CreateShipment` schema are sent.
 ## Configuration
 
 Configure Client ID, Token, friendly carrier names, and enabled state from the
-module Configure page. Shipping zones, ranges, and prices are configured on
-the native PrestaShop carrier page linked from each courier row. A blank Token
-submission preserves the stored value. The stored token is never rendered
-back to the browser.
+module Configure page. Enabled couriers appear as named choices in the AWB
+modal; disabled couriers remain known for historical and automatic shipment
+results. Native carriers created by the module start inactive, so they do not
+appear at checkout. They may be activated and configured from PrestaShop's
+carrier page when checkout use is desired. A blank Token submission preserves
+the stored value. The stored token is never rendered back to the browser.
+
+Refreshing couriers only discovers or updates Frisbo courier identities; it
+does not create native carriers. An unlinked row exposes an explicit **Create
+PrestaShop carrier** action. After creation, that action becomes **Configure
+carrier**. Shipment generation may also create the same hidden carrier on
+demand when Frisbo returns an unlinked courier. If a linked native carrier is
+deleted, the settings row offers **Recreate hidden carrier**; shipment
+synchronization also repairs that mapping automatically.

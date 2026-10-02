@@ -30,6 +30,7 @@ class ShipmentRepository
             'shipment_uid' => null,
             'status' => 'creating',
             'tracking_number' => null,
+            'tracking_url' => null,
             'last_error' => null,
             'date_add' => $now,
             'date_upd' => $now,
@@ -50,12 +51,15 @@ class ShipmentRepository
                 'status' => 'creating',
                 'external_reference' => pSQL($externalReference),
                 'request_uid' => pSQL($requestUid),
+                'shipment_uid' => null,
+                'tracking_number' => null,
+                'tracking_url' => null,
                 'last_error' => null,
                 'date_upd' => $now,
             ),
             '`id_shop` = '.(int) $this->idShop.'
              AND `id_order` = '.(int) $idOrder.'
-             AND `status` = \'failed\''
+             AND `status` IN (\'failed\', \'cancelled\')'
         );
 
         return $updated && $db->Affected_Rows() > 0;
@@ -83,6 +87,32 @@ class ShipmentRepository
             array(
                 'status' => $uncertain ? 'uncertain' : 'failed',
                 'last_error' => pSQL(Tools::substr((string) $message, 0, 1000)),
+                'date_upd' => date('Y-m-d H:i:s'),
+            ),
+            '`id_shop` = '.(int) $this->idShop.' AND `id_order` = '.(int) $idOrder
+        );
+    }
+
+    public function markCancelled($idOrder)
+    {
+        return Db::getInstance()->update(
+            'frisbo_awb_shipment',
+            array(
+                'status' => 'cancelled',
+                'last_error' => null,
+                'date_upd' => date('Y-m-d H:i:s'),
+            ),
+            '`id_shop` = '.(int) $this->idShop.' AND `id_order` = '.(int) $idOrder
+        );
+    }
+
+    public function updateTracking($idOrder, $trackingNumber, $trackingUrl)
+    {
+        return Db::getInstance()->update(
+            'frisbo_awb_shipment',
+            array(
+                'tracking_number' => $trackingNumber === null ? null : pSQL((string) $trackingNumber),
+                'tracking_url' => $trackingUrl === null ? null : pSQL((string) $trackingUrl),
                 'date_upd' => date('Y-m-d H:i:s'),
             ),
             '`id_shop` = '.(int) $this->idShop.' AND `id_order` = '.(int) $idOrder
