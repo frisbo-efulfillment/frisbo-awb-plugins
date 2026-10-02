@@ -11,11 +11,13 @@ class ShipmentRepository
 
     public function findByOrderId($idOrder)
     {
-        return Db::getInstance()->getRow(
+        $shipment = Db::getInstance()->getRow(
             'SELECT * FROM `'._DB_PREFIX_.'frisbo_awb_shipment`
              WHERE `id_shop` = '.(int) $this->idShop.'
                AND `id_order` = '.(int) $idOrder
         );
+
+        return $shipment ?: null;
     }
 
     public function begin($idOrder, $externalReference, $requestUid)

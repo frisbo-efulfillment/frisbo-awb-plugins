@@ -253,6 +253,10 @@ if ($generationMethod->invoke($shipmentService, $replacementOrder, array(
     exit(1);
 }
 $shipmentRepository = new ShipmentRepository($idShop);
+if ($shipmentRepository->findByOrderId(2147479999) !== null) {
+    fwrite(STDERR, "A missing shipment row is not normalized to null.".PHP_EOL);
+    exit(1);
+}
 Db::getInstance()->execute("START TRANSACTION");
 try {
     $shipmentRepository->begin(2147480000, "prestashop:2147480000", "prestashop:2147480000");
