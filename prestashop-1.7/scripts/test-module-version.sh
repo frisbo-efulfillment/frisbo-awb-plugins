@@ -142,6 +142,46 @@ if (!Module::isInstalled("frisbo_awb")) {
     exit(1);
 }
 $module = Module::getInstanceByName("frisbo_awb");
+$idAwbTab = (int) Tab::getIdFromClassName("AdminFrisboAwb");
+$awbTab = new Tab($idAwbTab);
+if ((int) $awbTab->id_parent !== (int) Tab::getIdFromClassName("AdminParentOrders")
+    || (bool) $awbTab->active
+) {
+    throw new Exception("AWB permissions are not registered under Orders without a navigation link.");
+}
+// Simulate an existing hidden tab, then upgrade it without recreating access.
+$rolesBefore = Db::getInstance()->executeS(
+    "SELECT * FROM "._DB_PREFIX_."authorization_role WHERE slug LIKE \"ROLE_MOD_TAB_ADMINFRISBOAWB_%\" ORDER BY id_authorization_role"
+);
+$grantsBefore = Db::getInstance()->executeS(
+    "SELECT a.* FROM "._DB_PREFIX_."access a INNER JOIN "._DB_PREFIX_."authorization_role r
+     ON r.id_authorization_role = a.id_authorization_role
+     WHERE r.slug LIKE \"ROLE_MOD_TAB_ADMINFRISBOAWB_%\" ORDER BY a.id_profile, a.id_authorization_role"
+);
+$awbTab->id_parent = -1;
+$awbTab->active = 1;
+if (!$awbTab->update()) {
+    throw new Exception("Could not prepare the legacy hidden AWB tab.");
+}
+require_once "/var/www/html/modules/frisbo_awb/upgrade/upgrade-1.2.1.php";
+if (!upgrade_module_1_2_1($module) || !upgrade_module_1_2_1($module)) {
+    throw new Exception("The AWB permissions upgrade failed or is not repeatable.");
+}
+$awbTab = new Tab($idAwbTab);
+if ((int) Tab::getIdFromClassName("AdminFrisboAwb") !== $idAwbTab
+    || (int) $awbTab->id_parent !== (int) Tab::getIdFromClassName("AdminParentOrders")
+    || (bool) $awbTab->active
+    || $rolesBefore !== Db::getInstance()->executeS(
+        "SELECT * FROM "._DB_PREFIX_."authorization_role WHERE slug LIKE \"ROLE_MOD_TAB_ADMINFRISBOAWB_%\" ORDER BY id_authorization_role"
+    )
+    || $grantsBefore !== Db::getInstance()->executeS(
+        "SELECT a.* FROM "._DB_PREFIX_."access a INNER JOIN "._DB_PREFIX_."authorization_role r
+         ON r.id_authorization_role = a.id_authorization_role
+         WHERE r.slug LIKE \"ROLE_MOD_TAB_ADMINFRISBOAWB_%\" ORDER BY a.id_profile, a.id_authorization_role"
+    )
+) {
+    throw new Exception("The AWB permissions upgrade changed existing roles or grants.");
+}
 $idShop = (int) Context::getContext()->shop->id;
 $idLang = (int) Context::getContext()->language->id;
 $carrierRepository = new CarrierRepository($idShop);

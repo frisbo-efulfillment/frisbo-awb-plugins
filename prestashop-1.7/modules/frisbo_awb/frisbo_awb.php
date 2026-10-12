@@ -27,7 +27,7 @@ class Frisbo_Awb extends CarrierModule
     {
         $this->name = 'frisbo_awb';
         $this->tab = 'shipping_logistics';
-        $this->version = '1.2.0';
+        $this->version = '1.2.1';
         $this->author = 'Frisbo';
         $this->need_instance = 0;
         $this->bootstrap = true;
@@ -415,22 +415,22 @@ class Frisbo_Awb extends CarrierModule
             && Db::getInstance()->execute('DROP TABLE IF EXISTS `'._DB_PREFIX_.'frisbo_awb_carrier`');
     }
 
-    private function installAdminTab()
+    public function installAdminTab()
     {
-        if (Tab::getIdFromClassName('AdminFrisboAwb')) {
-            return true;
-        }
-
-        $tab = new Tab();
-        $tab->active = 1;
+        $idTab = (int) Tab::getIdFromClassName('AdminFrisboAwb');
+        $tab = $idTab ? new Tab($idTab) : new Tab();
+        // Inactive tabs stay out of navigation, but a real parent makes their
+        // permissions reachable in PrestaShop 1.7's permissions tree.
+        $tab->active = 0;
         $tab->class_name = 'AdminFrisboAwb';
         $tab->module = $this->name;
-        $tab->id_parent = -1;
+        $tab->id_parent = (int) Tab::getIdFromClassName('AdminParentOrders');
         foreach (Language::getLanguages(true) as $language) {
             $tab->name[(int) $language['id_lang']] = 'Frisbo AWB';
         }
 
-        return $tab->add();
+        // Updating in place preserves the tab ID and existing profile grants.
+        return $idTab ? $tab->update() : $tab->add();
     }
 
     private function uninstallAdminTab()

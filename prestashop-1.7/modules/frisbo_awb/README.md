@@ -73,6 +73,20 @@ Only fields accepted by the current Frisbo `CreateShipment` schema are sent.
 
 ## Configuration
 
+### Employee permissions
+
+In **Advanced Parameters → Team → Permissions**, select the employee's
+profile and grant **View** on Orders, then **View** and **Edit** on the
+**Frisbo AWB** entry under Orders in the menu permissions table. The AWB
+controller requires Edit for generation, download, cancellation, and status.
+The module table's View, Configure, and Uninstall permissions are separate.
+
+Version 1.2.1 makes the AWB permission entry reachable in PrestaShop 1.7's
+permissions tree without adding a navigation link. Upgrade existing
+installations through Module Manager after uploading the new files; existing
+profile grants are preserved. Do not uninstall or reset to apply this update,
+as those operations remove the module's configuration and shipment records.
+
 Configure Client ID, Token, friendly carrier names, and enabled state from the
 module Configure page. Enabled couriers appear as named choices in the AWB
 modal; disabled couriers remain known for historical and automatic shipment
